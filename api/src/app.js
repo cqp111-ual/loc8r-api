@@ -1,0 +1,75 @@
+const express = require("express");
+const cookieParser = require("cookie-parser");
+const morgan = require("morgan");
+const multer = require('multer');
+const swaggerUi = require('swagger-ui-express');
+const fs = require('fs');
+const path = require('path');
+const YAML = require('js-yaml');
+
+// Load required configuration
+const { port } = require('./config/config.js');
+const { nodeEnv } = require('./config/config.js');
+
+// Custom global log function
+require('./utils/logger.js');
+
+// Require database connection
+require('./models/mongodb/db.js');
+
+// Load routes
+const indexRouter = require('./routes/index.js');
+const apiRouter = require('./routes/api.js');
+
+// Swagger documentation
+const swaggerDocument = YAML.load(fs.readFileSync(path.join(__dirname, './docs/swagger.yml'), 'utf8'));
+
+// Create app
+const app = express();
+
+app.set('port', port);
+
+if (nodeEnv !== 'production') {
+  app.use(morgan("dev"));
+} else {
+  app.use(morgan("common"));
+}
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+app.use(cookieParser());
+
+app.use('/', indexRouter);
+app.use('/api', apiRouter);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+
+// // catch 404 and forward to error handler
+// app.use(function (req, res, next) {
+//   next(createError(404));
+// });
+
+// error handler
+app.use(function (err, req, res, next) {
+
+  // Multer errors uploading files
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({
+      success: false,
+      message: `Bad request`,
+      data: null
+    })
+  }
+
+  // set locals, only providing error in development
+  console.error(err);
+  res.locals.error = req.app.get("env") === "development" ? err : {};
+
+  // render the error page
+  return res.status(err.status || 500).json({
+    success: false,
+    message: 'Server error',
+    data: { err }
+  });
+});
+
+module.exports = app;
