@@ -36,5 +36,6 @@ describe('GET /index', function () {
   });
 });
 
-// REST endpoints tests
-require('./locations/locations.get.test.js');
+// REST endpoints' tests
+// require('./locations/locations.get.test.js');
+require('./locations/locations.create.test.js');

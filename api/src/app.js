@@ -29,10 +29,12 @@ const app = express();
 
 app.set('port', port);
 
-if (nodeEnv !== 'production') {
-  app.use(morgan("dev"));
-} else {
+if (nodeEnv === 'production') {
   app.use(morgan("common"));
+} else if (nodeEnv === 'testing') {
+  // do not log requests
+} else {
+  app.use(morgan("dev"));
 }
 
 app.use(express.json());

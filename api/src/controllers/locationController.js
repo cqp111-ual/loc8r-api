@@ -332,15 +332,28 @@ class LocationController {
       // Higher priority to imageFile
       if(req.file) {
         // Validate image
-        const mimeType =  mime.lookup(req.file.filename); 
-        if (!mimeType || !LocationController.allowedImageTypes.includes(mimeType.toLowerCase())) {
+        const { mimetype, size, originalname } = req.file;
+
+        // const mimeType =  mime.lookup(req.file.filename); 
+        // Check mimetype
+        if (!mimetype || !LocationController.allowedImageTypes.includes(mimetype.toLowerCase())) {
           res.status(400).json({
             success: false,
-            message: `Unsupported image type: ${mimeType}. Must be one of: ${LocationController.allowedImageTypes.join(', ')}`,
+            message: `Unsupported image type: ${mimetype}. Must be one of: ${LocationController.allowedImageTypes.join(', ')}`,
             data: null
           });
           throw new Error('ValidationError');
         }
+
+        // Check empty file
+        if (size === 0) {
+          res.status(400).json({
+            success: false,
+            message: `Empty file '${originalname}' is not allowed.`,
+            data: null
+          });
+          throw new Error('ValidationError');
+        }       
 
         // Insert in Mongo
         const imageDoc = new ImageModel({
@@ -364,12 +377,23 @@ class LocationController {
           log.warn(`[LocationController.create()] Invalid URL for ${imageUrl}`);
         }
       }
-  
+
+      // tags
+      let cleanTags = [];
+      try {
+        const parsedTags = JSON.parse(tags);
+        if (Array.isArray(parsedTags) && parsedTags.every(t => typeof t === 'string')) {
+          cleanTags = parsedTags;
+        }
+      } catch {
+        // cleanTags = []
+      }
+
       const location = new LocationModel({
         name,
         address,
         description,
-        tags: typeof tags === 'string' ? tags.split(',') : tags,
+        tags: cleanTags,
         coords: {
           type: 'Point',
           coordinates: parsedCoordinates
@@ -379,7 +403,11 @@ class LocationController {
   
       await location.save();
   
-      return res.status(201).json(location);
+      return res.status(201).json({
+        success: true,
+        message: 'Location created successfully',
+        data: location
+      });
     } catch (err) {
 
       // Delete file

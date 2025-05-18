@@ -3,6 +3,7 @@ const path = require('path');
 const app = require('../src/app.js'); // loads mongoose schemas
 const mongoose = require('mongoose');
 const LocationModel = mongoose.model('Location');
+const ImageModel = mongoose.model('Image');
 
 const DATASET_PATH = path.join(__dirname, './datasets/locations.json');
 
@@ -17,9 +18,9 @@ class Dataset {
     Dataset.instance = this;
   }
 
-  // Método para cargar el dataset
-  async load() {
-    if (this.data) return; // Si ya está cargado, no hacemos nada
+  // load dataset
+  async load(force = false) {
+    if (this.data && !force) return;  // sample data was already inserted and dont want to reset
 
     try {
       const rawData = fs.readFileSync(DATASET_PATH, 'utf-8');
@@ -27,6 +28,9 @@ class Dataset {
 
       log.warn('[Dataset.load()] Clearing Location collection...');
       await LocationModel.deleteMany({});
+
+      log.warn('[Dataset.load()] Clearing Image collection...');
+      await ImageModel.deleteMany({});
 
       log.info(`[Dataset.load()] Inserting ${this.data.length} locations...`);
       await LocationModel.insertMany(this.data);
@@ -39,6 +43,12 @@ class Dataset {
       log.error('[Dataset.load()] Error loading dataset:', err);
       throw err;
     }
+  }
+
+  // load initial dataset again...
+  async reset() {
+    log.info(`[Dataset.reset()] Reseting initial Dataset...`);
+    await this.load(true);
   }
 
   // Método para calcular las estadísticas
