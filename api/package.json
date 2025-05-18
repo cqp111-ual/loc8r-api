@@ -18,7 +18,7 @@
     "randomSeed": "node ./seed/randomSeed.js",
     "test": "mocha --timeout 5000",
     "test:jenkins": "mocha --reporter mocha-junit-reporter --reporter-options mochaFile=./coverage/test-results.xml",
-    "test:sonarqube": "mocha --reporter mocha-sonarqube-reporter --reporter-options output=coverage/test-results.xml",
+    "test:sonarqube": "mocha --reporter mocha-sonarqube-reporter --reporter-options output=coverage/sonar-results.xml",
     "coverage": "nyc mocha",
     "coverage:report": "nyc report --reporter=lcov --report-dir=coverage && nyc report --reporter=text"
   },
