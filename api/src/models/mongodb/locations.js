@@ -76,7 +76,7 @@ poiSchema.index({ coords: '2dsphere' });
 poiSchema.set('toJSON', {
   transform: function (doc, ret) {
     // Reemplazar coords con solo coordinates
-    if (ret.coords && ret.coords.coordinates) {
+    if (ret?.coords && ret.coords.coordinates) {
       ret.coordinates = ret.coords.coordinates;
       delete ret.coords;
     }

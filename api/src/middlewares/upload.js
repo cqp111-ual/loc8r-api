@@ -1,6 +1,7 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto')
 
 // where files are stored: absolute path
 const { uploadsDir } = require('../config/config.js');
@@ -15,11 +16,17 @@ const storage = multer.diskStorage({
     cb(null, uploadsDir);
   },
   filename: function (req, file, cb) {
-    const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, unique + path.extname(file.originalname));
+    crypto.randomBytes(16, (err, buffer) => {
+      if (err) return cb(err);
+      const uniqueName = buffer.toString('hex') + path.extname(file.originalname);
+      cb(null, uniqueName);
+    });
   }
 });
 
-const upload = multer({ storage });
+const upload = multer({ 
+  storage,
+  limits: 15 * 1024 * 1024 //15 mb
+});
 
 module.exports = upload;

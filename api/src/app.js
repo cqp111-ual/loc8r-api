@@ -27,6 +27,9 @@ const swaggerDocument = YAML.load(fs.readFileSync(path.join(__dirname, './docs/s
 // Create app
 const app = express();
 
+// Security
+app.disable("x-powered-by");
+
 app.set('port', port);
 
 if (nodeEnv === 'production') {
@@ -44,11 +47,6 @@ app.use(cookieParser());
 app.use('/', indexRouter);
 app.use('/api', apiRouter);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
-
-// // catch 404 and forward to error handler
-// app.use(function (req, res, next) {
-//   next(createError(404));
-// });
 
 // error handler
 app.use(function (err, req, res, next) {

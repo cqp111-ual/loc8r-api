@@ -6,20 +6,12 @@ const connectToDatabase = async () => {
     try {
         await mongoose.connect(mongoUri);
         // log.info('Mongoose connected to ' + mongoUri); // leaks credentials, use only on development
-
         log.info('Mongoose connected');
     } catch (err) {
         log.error('Mongoose connection error: ' + err);
         process.exit(1); // Termina el proceso si no se puede conectar
     }
 };
-
-// mongoose.connect(mongo_uri)
-//     .then(() => log.info('Mongoose connected to ' + mongo_uri))
-//     .catch((err) => {
-//         log.error('Mongoose connection error: ' + err);
-//         process.exit(1);
-//     });
 
 // CONNECTION EVENTS
 mongoose.connection.on('disconnected', () => {
