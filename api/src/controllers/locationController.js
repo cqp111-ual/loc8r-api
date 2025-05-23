@@ -196,7 +196,7 @@ class LocationController {
         offset = '0'
       } = req.query;
 
-      const allowedSearchFields = ['name', 'date', 'address'];
+      const allowedSearchFields = ['name', 'date', 'coordinates'];
       const allowedSortFields = ['name', 'rating', 'date'];
 
       const parsedLimit = parseInt(limit);
@@ -228,46 +228,119 @@ class LocationController {
 
       const sortOrder = order === 'asc' ? 1 : -1;
       const sortOptions = { [sortFieldMap[sort]]: sortOrder };
+      let geoSearch = false; // different query
 
       const query = {};
 
       // To apply search, both parameters 'q' and 'searchBy' should be defined
       if (q && searchBy) {
         switch (searchBy) {
-          case 'name':
+          case 'name': {
             query.name = { $regex: q, $options: 'i' };
             break;
-          case 'address':
-            query.address = { $regex: q, $options: 'i' };
-            break;
-          case 'date':
-            const date = new Date(q);
+          }
+          case 'date': {
+            let date = new Date(q);
             if (!isNaN(date)) {
               query.timestamp = { $gte: date };
             } else {
-              return res.status(400).json({ success: false, message: `'q' is not a valid ISO date string for searchBy=date` });
+              return res.status(400).json({ 
+                success: false, 
+                message: `'q' is not a valid ISO date string for searchBy=date`, 
+                data: null 
+              });
             }
             break;
+          }
+          case 'coordinates': {
+            try {
+              const coords = JSON.parse(q);
+              if(!LocationController.isValidCoordinates(coords)) {
+                return res.status(400).json({
+                  success: false,
+                  message: `'q' must be a valid JSON array with two numbers: [longitude, latitude]`,
+                  data: null
+                });
+              }
+              const [lng, lat] = coords; // watch: GeoJSON uses [lng, lat]
+              geoSearch = true;
+              query.coords = {lng, lat};
+            } catch (err) {
+              return res.status(400).json({ 
+                success: false, 
+                message: `'q' must be a valid JSON array string for searchBy=coordinates`, 
+                data: null });
+            }
+            break;
+          }
         }
       }
 
       // Perform query
-      const items = await LocationModel.find(query)
-      .sort(sortOptions)
-      .skip(parsedOffset)
-      .limit(parsedLimit);
+      let items = [];
+      let total = 0;
 
-      const total = await LocationModel.countDocuments(query);
+      if(geoSearch) {
+        const maxDistance = 500000; // 500km
+
+        // Obtain location IDs paginated and ordered by distance
+        const idPipeline = [
+          {
+            $geoNear: {
+              near: { type: "Point", coordinates: [query.coords.lng, query.coords.lat] },
+              distanceField: "dist.calculated",
+              key: "coords",
+              maxDistance,
+              spherical: true
+            }
+          },
+          { $skip: parsedOffset },
+          { $limit: parsedLimit },
+          { $project: { _id: 1 } } // only _id
+        ];
+
+        const idResults = await LocationModel.aggregate(idPipeline);
+        const idArray = idResults.map(doc => doc._id);
+        
+        if (idArray.length > 0) {
+          items = await LocationModel.find({ _id: { $in: idArray } });  
+          // mantain order
+          items = idArray.map(id => items.find(item => item._id.equals(id)));
+        }
+        
+        const countPipeline = [
+          {
+            $geoNear: {
+              near: { type: "Point", coordinates: [query.coords.lng, query.coords.lat] },
+              distanceField: "dist.calculated",
+              key: "coords",
+              maxDistance,
+              spherical: true
+            }
+          },
+          { $count: "total" }
+        ];
+      
+        const countResult = await LocationModel.aggregate(countPipeline);
+        total = countResult.length > 0 ? countResult[0].total : 0;
+      } else {
+        items = await LocationModel.find(query)
+        .sort(sortOptions)
+        .skip(parsedOffset)
+        .limit(parsedLimit);
+
+        total = await LocationModel.countDocuments(query);
+      }
 
       return res.status(200).json({
-      success: true,
-      message: 'Locations retrieved successfully',
-      data: {
-        total,
-        limit: parsedLimit,
-        offset: parsedOffset,
-        results: items
-      }
+        success: true,
+        message: 'Locations retrieved successfully',
+        data: {
+          total,
+          limit: parsedLimit,
+          offset: parsedOffset,
+          results: items
+        }
       });
 
     } catch (err) {

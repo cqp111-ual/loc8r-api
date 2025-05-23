@@ -74,9 +74,43 @@ class Dataset {
     return mostFrequent;
   }
 
-  // Métodos para obtener datos o estadísticas
+  // Get original data
   getData() {
     return this.data;
+  }
+
+  total() {
+    return this.data.length;
+  }
+  
+  // Haversine formula
+  haversineDistance(lng1, lat1, lng2, lat2) {
+    const R = 6371; // km
+    const toRad = deg => (deg * Math.PI) / 180;
+
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lng2 - lng1);
+
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) ** 2;
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  orderbyDistance(lng, lat) {
+    return [...this.data].sort((a, b) => {
+      const [lngA, latA] = a.coords.coordinates;
+      const [lngB, latB] = b.coords.coordinates;
+
+      const distA = this.haversineDistance(lng, lat, lngA, latA);
+      const distB = this.haversineDistance(lng, lat, lngB, latB);
+
+      return distA - distB;
+    });
   }
 
   getStats() {
