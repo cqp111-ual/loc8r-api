@@ -7,21 +7,10 @@ const mongoose = require('mongoose');
 const LocationModel = mongoose.model('Location');
 const ImageModel = mongoose.model('Image');
 const { uploadsDir } = require('../config/config.js');
+const { isValidCoordinates } = require('../utils/helpers.js');
 
 class LocationController {
   static allowedImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-
-  // Aux: validate coordinates [lon, lat]
-  static isValidCoordinates(coords) {
-    return (
-      Array.isArray(coords) &&
-      coords.length === 2 &&
-      typeof coords[0] === 'number' &&
-      typeof coords[1] === 'number' &&
-      coords[0] >= -180 && coords[0] <= 180 &&   // longitud
-      coords[1] >= -90 && coords[1] <= 90        // latitud
-    );
-  }
 
   static async getImage(req, res, next) {
     try {
@@ -255,7 +244,7 @@ class LocationController {
           case 'coordinates': {
             try {
               const coords = JSON.parse(q);
-              if(!LocationController.isValidCoordinates(coords)) {
+              if(!isValidCoordinates(coords)) {
                 return res.status(400).json({
                   success: false,
                   message: `'q' must be a valid JSON array with two numbers: [longitude, latitude]`,
@@ -390,7 +379,7 @@ class LocationController {
       let parsedCoordinates;
       try {
         parsedCoordinates = JSON.parse(coordinates);
-        if (!LocationController.isValidCoordinates(parsedCoordinates)) {
+        if (!isValidCoordinates(parsedCoordinates)) {
           throw new Error('Invalid coordinates');
         }
       } catch (err) {
