@@ -24,7 +24,7 @@ mongoose.model('Image', imageSchema);
 const reviewSchema = new mongoose.Schema({
   author: String,
   rating: { type: Number, required: true, min: 0, max: 5 },
-  reviewText: String,
+  reviewText: {type: String, maxlength: 1000},
   createdOn: { type: Date, default: Date.now },
   coords: {
     type: { type: String, enum: ['Point'], default: 'Point' },

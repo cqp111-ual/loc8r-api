@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const LocationController = require('../controllers/locationController.js');
+const ReviewController = require('../controllers/reviewController.js');
 const FoursquareController = require('../controllers/foursquareController.js');
 const upload = require('../middlewares/upload.js');
 
@@ -22,5 +23,8 @@ router.get('/foursquare/locations/:locationId', FoursquareController.getById);
 
 // Imports a batch of foursquare locations
 router.post('/foursquare/locations/import', FoursquareController.get);
+
+// location reviews
+router.post('/locations/:locationId/reviews', ReviewController.create);
 
 module.exports = router;
