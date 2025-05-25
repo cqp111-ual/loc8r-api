@@ -3,7 +3,7 @@ const { expect } = require('chai');
 const app = require('../../src/app.js');
 const mongoose = require('mongoose');
 const Dataset = require('../Dataset.js');
-const { checkResponseSchema, checkErrorResponse, checkSuccessResponse, checkLocationSchemaJSON } = require('../utils/helpers.js');
+const { checkSuccessResponse, checkLocationSchemaJSON, checkErrorResponse, checkReviewSchemaJSON } = require('../utils/helpers.js');
 
 describe('POST /api/locations/:locationId/reviews', function () {
 
@@ -21,7 +21,6 @@ describe('POST /api/locations/:locationId/reviews', function () {
     await Dataset.reset();
     baseLocation = Dataset.getData()[0];
     locationId = baseLocation._id;
-
   });
 
   /**
@@ -50,15 +49,8 @@ describe('POST /api/locations/:locationId/reviews', function () {
 
     checkSuccessResponse(response.body);
 
-    const updatedLocation = response.body.data;
-    checkLocationSchemaJSON(updatedLocation);
-
-    const baseLocationReviews = baseLocation.reviews;
-    const reviews = updatedLocation.reviews;
-    expect(reviews).to.be.an('array').that.is.not.empty;
-    expect(reviews.length).to.equal(baseLocationReviews.length+1);
-
-    const insertedReview = reviews[reviews.length-1];
+    const insertedReview = response.body.data;
+    checkReviewSchemaJSON(insertedReview);
     expect(mongoose.Types.ObjectId.isValid(insertedReview.id)).to.be.true;
     expect(insertedReview.author).to.equal(baseReview.author);
     expect(insertedReview.rating).to.equal(baseReview.rating);
@@ -67,11 +59,20 @@ describe('POST /api/locations/:locationId/reviews', function () {
     expect(insertedReview.createdOn.slice(0, 10)).to.equal(new Date().toISOString().slice(0, 10));
 
     // Check if rating was updated successfully
+    const locationResponse = await request(app)
+      .get(`/api/locations/${locationId}`)
+      .expect(200);
+
+    const updatedLocation = locationResponse.body.data;
+    checkLocationSchemaJSON(updatedLocation);
+    expect(updatedLocation.numReviews).to.equal(baseLocation.reviews.length+1);
+
     const expectedRating = (
       (baseLocation.rating * baseLocation.reviews.length + baseReview.rating)
       / (baseLocation.reviews.length + 1)
     );
-    expect(updatedLocation.rating).to.be.a('number');
+
+    expect(insertedReview.rating).to.be.a('number');
     expect(updatedLocation.rating).to.be.closeTo(expectedRating, 0.01);
   });
 

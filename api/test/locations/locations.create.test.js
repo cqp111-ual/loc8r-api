@@ -52,7 +52,7 @@ describe('POST /api/locations', function () {
     expect(response.body.data.name).to.equal(baseLocation.name);
     expect(response.body.data.coordinates).to.deep.equal(baseLocation.coordinates);
     expect(response.body.data.rating).to.equal(0);
-    expect(response.body.data.reviews).to.be.an('array').that.is.empty;
+    expect(response.body.data.numReviews).to.equal(0);
     expect(response.body.data.tags).to.be.an('array').that.is.empty;
     expect(response.body.data.imageId).to.be.null;
     // validate createdOn is correct
@@ -155,7 +155,7 @@ describe('POST /api/locations', function () {
     expect(response.body.data.name).to.equal(baseLocation.name);
     expect(response.body.data.coordinates).to.deep.equal(baseLocation.coordinates);
     expect(response.body.data.rating).to.equal(0);
-    expect(response.body.data.reviews).to.be.an('array').that.is.empty;
+    expect(response.body.data.numReviews).to.equal(0);
   });
 
   it('tags field on creation', async function () {

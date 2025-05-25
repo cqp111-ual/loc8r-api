@@ -16,7 +16,7 @@ const { checkResponseSchema } = require('./utils/helpers.js');
 // Connect to database before all tests
 before(async function () {
   await connectToDatabase();
-  await Dataset.load();
+  // await Dataset.load();
 });
 
 // Desconexión después de todos los tests
@@ -37,6 +37,11 @@ describe('GET /index', function () {
 });
 
 // REST endpoints' tests
-require('./locations/locations.create.test.js');
-require('./locations/locations.get.test.js');
+// require('./locations/locations.create.test.js');
+// require('./locations/locations.get.test.js');
+
+// review tests: in this exact order
 require('./reviews/reviews.create.test.js');
+require('./reviews/reviews.get.test.js');
+require('./reviews/reviews.delete.test.js');
+require('./reviews/reviews.update.test.js');

@@ -26,5 +26,9 @@ router.post('/foursquare/locations/import', FoursquareController.get);
 
 // location reviews
 router.post('/locations/:locationId/reviews', ReviewController.create);
+router.get('/locations/:locationId/reviews', ReviewController.get);
+router.get('/locations/:locationId/reviews/:reviewId', ReviewController.getById);
+router.delete('/locations/:locationId/reviews/:reviewId', ReviewController.delete);
+router.put('/locations/:locationId/reviews/:reviewId', ReviewController.update);
 
 module.exports = router;

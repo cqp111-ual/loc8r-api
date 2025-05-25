@@ -93,6 +93,9 @@ poiSchema.set('toJSON', {
     delete ret.image;
     ret.imageId = doc.image;
 
+    ret.numReviews = ret.reviews.length;
+    delete ret.reviews;
+
     return ret;
   }
 });
