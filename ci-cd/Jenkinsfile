@@ -1,0 +1,222 @@
+// Reset directory, clone clean repo
+def git_clone() {
+  echo "Purging directory ${env.APP_DIR} (only if exists)..."
+  sh """
+    if [ -d "${env.APP_DIR}" ]; then
+      echo "Deleting ${env.APP_DIR}..."
+      chmod -Rf 777 ${env.APP_DIR} || true
+      rm -rf ${env.APP_DIR}
+    fi
+  """
+  echo "Cloning repository ${env.GIT_REPO_URL} to ${env.APP_DIR}..."
+  dir(env.APP_DIR) {
+    git branch: "${env.GIT_BRANCH}",
+      credentialsId: "${env.GIT_CRED_ID}",
+      url: "${env.GIT_REPO_URL}"
+    sh 'ls -la'
+    sh 'pwd'
+
+    // Guardamos el commit corto en una variable de entorno
+    env.GIT_COMMIT_SHORT = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+    echo "Referred git commit: ${env.GIT_COMMIT_SHORT}"
+  }
+}
+
+pipeline {
+  agent {
+      label 'cnsa-bld-02'
+  }
+  
+  environment {
+    // General
+    APP_DIR = "loc8r-api"
+
+    // Git
+    GIT_REPO_URL = 'git@github.com:cqp111-ual/loc8r-api.git'
+    GIT_BRANCH = 'main'
+    GIT_CRED_ID = 'git-loc8r-api'
+    // GIT_COMMIT_SHORT = '' // to store git commit value
+
+    // Docker
+    DOCKER_IMAGE_NAME = "loc8r-api"
+    // DOCKER_IMAGE_TAG = 'latest' // default
+    DOCKER_REPO_NAME = "cqp111"
+    DOCKER_REPO_CRED_ID = 'dockerhub_cqp111'
+
+    // Code analysis
+    SONARQUBE_ENV = 'sonarqube.cqp111-ual.tech'
+
+    // Notifications
+    DISCORD_CRED_ID = 'discord-notifications'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        script{
+          git_clone()
+        }
+      }
+    }
+
+    // stage('Install dependencies') {
+    //   steps {
+    //     dir("${env.APP_DIR}/api") {
+    //       echo "Installing project dependencies..."
+    //       sh 'npm install'
+    //     }
+    //   }
+    // }
+
+    // stage('Run Tests & Generate Coverage') {
+    //   steps {
+    //     withCredentials([file(credentialsId: 'loc8r-api-test-config', variable: 'TEST_ENV_FILE')]) {
+    //       dir("${env.APP_DIR}/api") {
+    //         echo "Preparing test environment..."
+    //         sh '''
+    //         if [ -f .env ]; then
+    //           echo ".env exists, deleting it..."
+    //           rm .env
+    //         fi    
+    //         '''
+    //         sh '[ ! -f .env ] && cp "$TEST_ENV_FILE" .env || echo ".env already exists, skipping copy"'
+    //         echo "Running tests..."
+    //         sh 'npm run test:jenkins'        // genera ./coverage/test-results.xml
+    //         sh 'npm run coverage'             // ejecuta mocha + nyc para cobertura
+    //         sh 'npm run coverage:report'      // genera lcov.info y reporte texto en ./coverage
+    //       }
+    //     }
+    //   }
+    //   post {
+    //     always {
+    //       dir("${env.APP_DIR}/api") {
+    //         // JUnit para Jenkins
+    //         junit 'coverage/test-results.xml'
+            
+    //         // HTML coverage report (nyc o istanbul)
+    //         publishHTML target: [ 
+    //           allowMissing: false,
+    //           alwaysLinkToLastBuild: true,
+    //           keepAll: true,
+    //           reportDir: 'coverage/lcov-report',
+    //           reportFiles: 'index.html',
+    //           reportName: 'Coverage Report'
+    //         ]
+    //       }
+    //     }
+    //   }
+    // }
+
+    // stage('SonarQube Analysis') {
+    //   steps {
+    //     // Create scannerwork folder with sufficient permissions
+    //     sh "mkdir ${env.APP_DIR}/.scannerwork"
+    //     sh "chmod -R 777 ${env.APP_DIR}"
+
+    //     dir("${env.APP_DIR}") {
+    //       echo "Running SonarQube analysis..."
+
+    //       withSonarQubeEnv("${env.SONARQUBE_ENV}") {
+    //         sh 'docker run --rm \
+    //             -e SONAR_HOST_URL="$SONAR_HOST_URL" \
+    //             -e SONAR_TOKEN="$SONAR_AUTH_TOKEN" \
+    //             -v "$PWD:/usr/src" \
+    //             sonarsource/sonar-scanner-cli \
+    //             -Dsonar.projectKey=loc8r-api \
+    //             -Dsonar.sources=api/src,build,deploy \
+    //             -Dsonar.javascript.lcov.reportPaths=api/coverage/lcov.info \
+    //             -Dsonar.working.directory=.scannerwork \
+    //             -Dsonar.exclusions=**/coverage/**,**/*.xml,**/*.json \
+    //             -Dsonar.tests=api/test \
+    //             -Dsonar.projectName="Loc8r API" \
+    //             -Dsonar.projectVersion=1.0 \
+    //             -Dsonar.sourceEncoding=UTF-8'
+    //       }
+    //     }
+    //   }
+    // }
+
+    // Clear tests and analysis files... remove and clone repo again
+    stage('Clean and checkout for Docker build') {
+      steps {
+        script{
+          git_clone()
+        }
+      }
+    }
+
+    stage('Build image locally and push') {
+      steps {
+        script {
+          // Set image tag
+          def commitShort = env.GIT_COMMIT_SHORT?.trim()
+          def imageTag = (commitShort && commitShort != '') ? commitShort : 'latest'
+
+          // Set image names
+          def localImage = "${env.DOCKER_IMAGE_NAME}:${imageTag}"
+          def remoteImage = "${env.DOCKER_REPO_NAME}/${env.DOCKER_IMAGE_NAME}:${imageTag}"
+          def latestRemoteImage = "${env.DOCKER_REPO_NAME}/${env.DOCKER_IMAGE_NAME}:latest"
+
+          // Build image locally
+          dir("${env.APP_DIR}") {
+            echo "Building Docker image locally: ${localImage}"
+            sh "docker build -t ${localImage} -f build/Dockerfile ."
+            echo "Docker image ${localImage} built successfully"
+          }
+
+          // Push images
+          withCredentials([usernamePassword(credentialsId: "${DOCKER_REPO_CRED_ID}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+            script {
+              sh "echo \"$DOCKER_PASS\" | docker login -u \"$DOCKER_USER\" --password-stdin"
+
+              echo "Tagging local image as:"
+              echo "   - ${remoteImage}"
+              echo "   - ${latestRemoteImage}"
+
+              sh "docker tag ${localImage} ${remoteImage}"
+              sh "docker tag ${localImage} ${latestRemoteImage}"
+
+
+              echo "Uploading image ${remoteImage}..."
+              sh "docker push ${remoteImage}"
+              echo "Image ${remoteImage} successfully uploaded."
+
+              echo "Uploading image ${latestRemoteImage}..."
+              sh "docker push ${latestRemoteImage}"
+              echo "Image ${latestRemoteImage} successfully uploaded."
+
+              sh "docker logout"
+            }
+          }
+        }
+      }
+    }
+
+    stage('Deploy to Production') {
+      steps{
+        // Check to manual approving deploy to production.
+        // It implemenents Continuous Delivery instead of Continuous Deployment
+        echo 'Successfully deployed!'
+        // input message: "Proceed Deploy to Production?" 
+      }
+    }
+  }
+
+  post {
+    always {
+      script {
+        def result = currentBuild.result ?: 'SUCCESS'
+        withCredentials([string(credentialsId: DISCORD_CRED_ID, variable: 'WEBHOOK')]) {
+          discordSend (
+            webhookURL: WEBHOOK,
+              title: "Pipeline: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+              link: env.BUILD_URL,
+              description: "Estado del pipeline: **${result}**",
+              footer: "Sonar + Discord Notifier",
+              result: result
+          )
+        }
+      }
+    }
+  }
+}

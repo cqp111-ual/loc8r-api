@@ -1,25 +1,19 @@
-networks:
-  traefik-proxy:
-    external: true
-
 services:
   loc8r-api:
-    image: loc8r-api:slim
+    image: loc8r-api:dev
     build:
       context: ../
       dockerfile: ./build/Dockerfile
     container_name: loc8r-api
     ports:
       - 8000:3000
-    networks:
-      - traefik-proxy
     env_file:
       - .env
     environment:
       - TZ=Europe/Madrid
       - PORT=3000
       - NODE_ENV=${NODE_ENV:-production}
-      - UPLOADS_DIR=${UPLOADS_DIR:-/loc8r/images}
+      - UPLOADS_DIR=${UPLOADS_DIR:-/app/images}
       - MONGO_URI=${MONGO_URI:-mongodb://user:pass@mongodb-srv:27017/loc8r}
       - FOURSQUARE_API_URL=${FOURSQUARE_API_URL:-https://api.foursquare.com}
       - FOURSQUARE_API_KEY=${FOURSQUARE_API_KEY:-YOUR_API_KEY}

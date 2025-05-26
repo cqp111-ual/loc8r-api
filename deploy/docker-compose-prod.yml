@@ -1,0 +1,38 @@
+networks:
+  traefik-proxy:
+    external: true
+
+services:
+  loc8r-api:
+    image: cqp111/loc8r-api:latest
+    container_name: loc8r-api
+    networks:
+      - traefik-proxy
+    env_file:
+      - .env
+    volumes:
+      - ./uploads:/app/uploads
+    environment:
+      - TZ=Europe/Madrid
+      - PORT=3000
+      - UPLOADS_DIR=/app/uploads
+      - NODE_ENV=${NODE_ENV:-production}
+      - MONGO_URI=${MONGO_URI:-mongodb://user:pass@mongodb-srv:27017/loc8r}
+      - FOURSQUARE_API_URL=${FOURSQUARE_API_URL:-https://api.foursquare.com}
+      - FOURSQUARE_API_KEY=${FOURSQUARE_API_KEY:-YOUR_API_KEY}
+    mem_limit: 512m
+    cpus: 2.0
+    restart: always
+    labels:
+      - "traefik.enable=true"
+      - "traefik.providers.docker.network=traefik-proxy"
+      - "traefik.http.services.loc8r-api.loadbalancer.server.port=3000"
+      # HTTP Traffic (port 80)
+      - "traefik.http.routers.loc8r-api-http.entrypoints=web"
+      - "traefik.http.routers.loc8r-api-http.rule=Host(`loc8r-api.cqp111-ual.tech`)"
+      - "traefik.http.routers.loc8r-api-http.middlewares=redirect-to-https@file"
+      # HTTPS Traffic (port 443)
+      - "traefik.http.routers.loc8r-api-https.entrypoints=websecure"
+      - "traefik.http.routers.loc8r-api-https.tls=true"
+      - "traefik.http.routers.loc8r-api-https.rule=Host(`loc8r-api.cqp111-ual.tech`)"
+      - "traefik.http.routers.loc8r-api-https.service=loc8r-api"
