@@ -1,119 +1,11 @@
-const fs = require('fs'); // existsSync, createReadStream
 const fsp = require('fs/promises'); // async/await unlink
-const path = require('path');
-const mime = require('mime-types');
-const { request } = require('undici');
 const mongoose = require('mongoose');
 const LocationModel = mongoose.model('Location');
-const ImageModel = mongoose.model('Image');
-const { uploadsDir } = require('../config/config.js');
 const { isValidCoordinates } = require('../utils/helpers.js');
 
+const ImageController = require('./imageController.js');
+
 class LocationController {
-  static allowedImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-
-  static async getImage(req, res, next) {
-    try {
-
-      const imageId = req.params.imageId;
-
-      if (!mongoose.Types.ObjectId.isValid(imageId)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid image ID format",
-          data: null
-        });
-      }
-
-      const image = await ImageModel.findById(imageId);
-      if (!image) {
-        return res.status(404).json({
-          success: false,
-          message: "Image not found",
-          data: null
-          });
-      }
-
-      // Si hosted === false => proxy externa
-      if (!image.hosted) {
-        try {
-          const externalResponse = await request(image.url);
-          if (externalResponse.statusCode !== 200) {
-            return res.status(502).json({
-              success: false,
-              message: `Failed to fetch external image. Status: ${externalResponse.statusCode}`,
-              data: null
-            });
-          }
-
-          const contentType = externalResponse.headers['content-type'];
-          if (!contentType ) {
-            return res.status(400).json({
-              success: false,
-              message: 'Missing Content-Type in external response',
-              data: null
-            });
-          }
-
-          if (!LocationController.allowedImageTypes.includes(contentType.toLowerCase())) {
-            return res.status(415).json({
-              success: false,
-              message: `Unsupported image type: ${contentType}. Must be one of: ${LocationController.allowedImageTypes.join(', ')}`,
-              data: null
-            });
-          }
-
-          // return proxied image
-          res.status(200);
-          res.setHeader('Content-Type', contentType);
-          externalResponse.body.pipe(res);
-          return;
-        } catch (err) {
-          log.error(`[LocationController.getImage()] Error fetching external image: ${err.message}`);
-          return res.status(500).json({
-            success: false,
-            message: 'Error fetching external image',
-            data: null
-          });
-        }
-      } else {
-        try {
-          const imagePath = path.join(uploadsDir, image.path);
-          if (!fs.existsSync(imagePath)) {
-            return res.status(404).json({
-              success: false,
-              message: 'Hosted image file not found on server',
-              data: null
-            });
-          }
-
-          const mimeType =  mime.lookup(imagePath); 
-          if (!mimeType || !LocationController.allowedImageTypes.includes(mimeType.toLowerCase())) {
-            return res.status(415).json({
-              success: false,
-              message: `Unsupported local image type: ${mimeType}`,
-              data: null
-            });
-          }
-      
-          res.status(200);
-          res.setHeader('Content-Type', mimeType);
-          const stream = fs.createReadStream(imagePath);
-          stream.pipe(res);
-        } catch (err) {
-          log.error(`[LocationController.getImage()] Error serving hosted image: ${err.message}`);
-          return res.status(500).json({
-            success: false,
-            message: 'Error serving hosted image',
-            data: null
-          });
-        }
-      }
-    } catch (err) {
-      log.error('[LocationController.getImage()] Unexpected error!');
-      next(err);
-    }
-  }
 
   static async getById(req, res, next) {
     try {
@@ -121,9 +13,9 @@ class LocationController {
       const locationId = req.params.locationId;
 
       if (!mongoose.Types.ObjectId.isValid(locationId)) {
-        return res.status(400).json({
+        return res.status(404).json({
           success: false,
-          message: "Invalid location ID format",
+          message: "Location not found",
           data: null
         });
       }
@@ -152,14 +44,15 @@ class LocationController {
       const locationId = req.params.locationId;
 
       if (!mongoose.Types.ObjectId.isValid(locationId)) {
-        return res.status(400).json({
+        return res.status(404).json({
           success: false,
-          message: "Invalid location ID format",
+          message: "Location not found",
           data: null
         });
       }
 
-      const location = await LocationModel.findByIdAndDelete(locationId);
+      const location = await LocationModel.findById(locationId);
+
       if (!location) {
         return res.status(404).json({
           success: false,
@@ -167,7 +60,20 @@ class LocationController {
           data: null
         });
       }
+
+      // delete image 
+      if (location.image) {
+        const deleted = await ImageController.deleteImage(location.image);
+        if (!deleted) {
+          log.warn(`[LocationController.deleteById()] Failed to delete associated image with ID: ${location.image}`);
+        }
+      }
+
+      // delete location
+      await location.deleteOne();
+
       return res.status(204).send();
+
     } catch (err) {
       log.error('[LocationController.deleteById()] Unexpected error!');
       next(err);
@@ -393,50 +299,21 @@ class LocationController {
 
       // Higher priority to imageFile
       if(req.file) {
-        // Validate image
-        const { mimetype, size, originalname } = req.file;
-
-        // const mimeType =  mime.lookup(req.file.filename); 
-        // Check mimetype
-        if (!mimetype || !LocationController.allowedImageTypes.includes(mimetype.toLowerCase())) {
+        try {
+          imageId = await ImageController.createImage('file', req.file);
+        } catch (err) {
           res.status(400).json({
             success: false,
-            message: `Unsupported image type: ${mimetype}. Must be one of: ${LocationController.allowedImageTypes.join(', ')}`,
+            message: err.message || 'Error uploading image',
             data: null
           });
           throw new Error('ValidationError');
         }
-
-        // Check empty file
-        if (size === 0) {
-          res.status(400).json({
-            success: false,
-            message: `Empty file '${originalname}' is not allowed.`,
-            data: null
-          });
-          throw new Error('ValidationError');
-        }       
-
-        // Insert in Mongo
-        const imageDoc = new ImageModel({
-          hosted: true,
-          path: req.file.filename
-        });
-
-        await imageDoc.save();
-        imageId = imageDoc._id;
-
       } else if (imageUrl && typeof imageUrl === 'string' && imageUrl.trim() !== '') {
         try {
-          new URL(imageUrl);
-          const imageDocUrl = new ImageModel({
-            hosted: false,
-            url: imageUrl
-          });
-          await imageDocUrl.save();
-          imageId = imageDocUrl._id;
-        } catch (e) {
-          log.warn(`[LocationController.create()] Invalid URL for ${imageUrl}`);
+          imageId = await ImageController.createImage('url', imageUrl);
+        } catch (err) {
+          log.warn(`[LocationController.create()] Could not save image from Url ${imageUrl}`);
         }
       }
 
@@ -472,21 +349,14 @@ class LocationController {
       });
     } catch (err) {
 
-      // Delete file
-      if (req.file?.path) {
+      // Delete imageDoc
+      if(imageId) {
+        await ImageController.deleteImage(imageId);
+      } else if (req.file?.path) { // delete file
         try {
           await fsp.unlink(req.file.path);
         } catch (unlinkErr) {
           log.warn(`Could not delete file: ${req.file.path}. Error message: ${unlinkErr.message}`);
-        }
-      }
-
-      // Delete imageDoc
-      if(imageId) {
-        try {
-          await ImageModel.findByIdAndDelete(imageId);
-        } catch (deleteErr) {
-          log.warn(`Could not delete image document with _id=${imageId}`);
         }
       }
 

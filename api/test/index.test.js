@@ -37,10 +37,14 @@ describe('GET /index', function () {
 });
 
 // REST endpoints' tests
-// require('./locations/locations.create.test.js');
-// require('./locations/locations.get.test.js');
+require('./locations/locations.create.test.js');
+require('./locations/locations.get.test.js');
+require('./locations/locations.delete.test.js');
 
-// review tests: in this exact order
+// image tests (after location tests)
+require('./images/images.get.test.js');
+
+// review tests (after location tests)
 require('./reviews/reviews.create.test.js');
 require('./reviews/reviews.get.test.js');
 require('./reviews/reviews.delete.test.js');

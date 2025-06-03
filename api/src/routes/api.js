@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const LocationController = require('../controllers/locationController.js');
+const ImageController = require('../controllers/imageController.js');
 const ReviewController = require('../controllers/reviewController.js');
 const FoursquareController = require('../controllers/foursquareController.js');
 const upload = require('../middlewares/upload.js');
@@ -15,7 +16,7 @@ router.post('/locations', upload.single('imageFile'), LocationController.create)
 router.delete('/locations/:locationId', LocationController.deleteById);
 
 // locations' images
-router.get('/locations/image/:imageId', LocationController.getImage);
+router.get('/locations/image/:imageId', ImageController.getImage);
 
 // foursquare
 router.get('/foursquare/locations', FoursquareController.get);

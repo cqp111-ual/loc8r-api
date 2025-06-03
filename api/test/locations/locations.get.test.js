@@ -1,5 +1,6 @@
 const request = require('supertest');
 const { expect } = require('chai');
+const mongoose = require('mongoose');
 const app = require('../../src/app.js');
 const Dataset = require('../Dataset.js');
 const { checkErrorResponse, checkSuccessResponse, checkLocationSchemaJSON } = require('../utils/helpers.js');
@@ -377,4 +378,65 @@ describe('GET /api/locations', function () {
     expect(resultIds).to.deep.equal(expectedSorted.slice(0, expectedCount));
   });
 
+});
+
+// Get by id
+describe('GET /api/locations/:locationId', function () {
+
+  let location = null;
+  let locationId = null;
+  before(async function () {
+    await Dataset.reset();
+    location = Dataset.getData()[0];
+    locationId = location._id;
+  });
+
+  /**
+   * Basic tests 
+   */
+
+  it('should return 200 when retrieving a valid location', async function () {
+    const response = await request(app)
+      .get(`/api/locations/${locationId}`)
+      .expect(200);
+
+    checkSuccessResponse(response.body);
+    const responseLocation = response.body.data;
+    checkLocationSchemaJSON(responseLocation);
+
+    // compare that responseLocation equals location field by field...
+    expect(responseLocation).to.have.property('id', locationId);
+    expect(responseLocation).to.have.property('name', location.name);
+    expect(responseLocation).to.have.property('address', location.address);
+    expect(responseLocation).to.have.property('description', location.description);
+    expect(responseLocation).to.have.property('rating', location.rating);
+    expect(responseLocation.tags).to.deep.equal(location.tags);
+    expect(responseLocation.coordinates).to.deep.equal(location.coords.coordinates);
+    expect(responseLocation).to.have.property('createdOn');
+  });
+
+  it('try invalid location id', async function () {
+
+    // Non existing location
+    const existingIds = Dataset.getData().map(item => item._id.toString());
+
+    let fakeLocationId;
+    do {
+      fakeLocationId = new mongoose.Types.ObjectId().toString();
+    } while (existingIds.includes(fakeLocationId));
+
+    const res01 = await request(app)
+      .get(`/api/locations/${fakeLocationId}`)
+      .expect(404);
+
+    checkErrorResponse(res01.body);
+
+    // Invalid location id
+    const invalidLocationId = 'abcd'
+    const res02 = await request(app)
+      .get(`/api/locations/${invalidLocationId}`)
+      .expect(404);
+
+    checkErrorResponse(res02.body);
+  });
 });
