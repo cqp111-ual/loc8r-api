@@ -6,7 +6,7 @@ router.get('/index', (req, res) => {
       success: true,
       message: 'Hey from index!',
       data: {
-        sample_data: 'abcd'
+        sample_data: 'abcd-jesus'
       }
     });
 });
