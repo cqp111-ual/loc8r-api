@@ -20,7 +20,7 @@
     "test:local": "mocha --timeout 10000 --exit --detectOpenHandles --reporter mochawesome --reporter-options reportDir=coverage,reportFilename=local-report,quiet=true",
     "test:jenkins": "mocha --timeout 10000 --exit --detectOpenHandles --reporter mocha-junit-reporter --reporter-options mochaFile=./coverage/test-results.xml",
     "test:sonarqube": "mocha --timeout 10000 --exit --detectOpenHandles --reporter mocha-sonarqube-reporter --reporter-options output=coverage/sonar-results.xml",
-    "coverage": "nyc mocha",
+    "coverage": "nyc mocha --timeout 10000 --exit --detectOpenHandles",
     "coverage:report": "nyc report --reporter=lcov --report-dir=coverage && nyc report --reporter=text"
   },
   "nyc": {

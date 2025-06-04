@@ -1,22 +1,21 @@
 // Reset directory, clone clean repo
-def git_clone() {
-  echo "Purging directory ${env.APP_DIR} (only if exists)..."
+def git_clone(String targetDir) {
+  echo "Purging directory ${targetDir} (only if exists)..."
   sh """
-    if [ -d "${env.APP_DIR}" ]; then
-      echo "Deleting ${env.APP_DIR}..."
-      chmod -Rf 777 ${env.APP_DIR} || true
-      rm -rf ${env.APP_DIR}
+    if [ -d "${targetDir}" ]; then
+      echo "Deleting ${targetDir}..."
+      chmod -Rf 777 ${targetDir} || true
+      rm -rf ${targetDir}
     fi
   """
-  echo "Cloning repository ${env.GIT_REPO_URL} to ${env.APP_DIR}..."
-  dir(env.APP_DIR) {
+  echo "Cloning repository ${env.GIT_REPO_URL} to ${targetDir}..."
+  dir(targetDir) {
     git branch: "${env.GIT_BRANCH}",
-      credentialsId: "${env.GIT_CRED_ID}",
-      url: "${env.GIT_REPO_URL}"
+        credentialsId: "${env.GIT_CRED_ID}",
+        url: "${env.GIT_REPO_URL}"
     sh 'ls -la'
     sh 'pwd'
 
-    // Guardamos el commit corto en una variable de entorno
     env.GIT_COMMIT_SHORT = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
     echo "Referred git commit: ${env.GIT_COMMIT_SHORT}"
   }
@@ -24,9 +23,9 @@ def git_clone() {
 
 pipeline {
   agent {
-      label 'cnsa-bld-02'
+    label 'cnsa-bld-01'
   }
-  
+
   environment {
     // General
     APP_DIR = "loc8r-api"
@@ -46,6 +45,12 @@ pipeline {
     // Code analysis
     SONARQUBE_ENV = 'sonarqube.cqp111-ual.tech'
 
+    // Deployment
+    DEPLOY_CRED_ID = "ssh-cnsa-dpl-01"
+    DEPLOY_HOST_CRED_ID = "loc8r-api-dpl-host"
+    DEPLOY_DIR_CRED_ID = "loc8r-api-dpl-dir"
+    DEPLOY_ENV_CRED_ID = "loc8r-api-prod-env"
+
     // Notifications
     DISCORD_CRED_ID = 'discord-notifications'
   }
@@ -53,94 +58,95 @@ pipeline {
   stages {
     stage('Checkout') {
       steps {
-        script{
-          git_clone()
+        script {
+          git_clone(env.APP_DIR)
         }
       }
     }
 
-    // stage('Install dependencies') {
-    //   steps {
-    //     dir("${env.APP_DIR}/api") {
-    //       echo "Installing project dependencies..."
-    //       sh 'npm install'
-    //     }
-    //   }
-    // }
 
-    // stage('Run Tests & Generate Coverage') {
-    //   steps {
-    //     withCredentials([file(credentialsId: 'loc8r-api-test-config', variable: 'TEST_ENV_FILE')]) {
-    //       dir("${env.APP_DIR}/api") {
-    //         echo "Preparing test environment..."
-    //         sh '''
-    //         if [ -f .env ]; then
-    //           echo ".env exists, deleting it..."
-    //           rm .env
-    //         fi    
-    //         '''
-    //         sh '[ ! -f .env ] && cp "$TEST_ENV_FILE" .env || echo ".env already exists, skipping copy"'
-    //         echo "Running tests..."
-    //         sh 'npm run test:jenkins'        // genera ./coverage/test-results.xml
-    //         sh 'npm run coverage'             // ejecuta mocha + nyc para cobertura
-    //         sh 'npm run coverage:report'      // genera lcov.info y reporte texto en ./coverage
-    //       }
-    //     }
-    //   }
-    //   post {
-    //     always {
-    //       dir("${env.APP_DIR}/api") {
-    //         // JUnit para Jenkins
-    //         junit 'coverage/test-results.xml'
+    stage('Install dependencies') {
+      steps {
+        dir("${env.APP_DIR}/api") {
+          echo "Installing project dependencies..."
+          sh 'npm install'
+        }
+      }
+    }
+
+    stage('Run Tests & Generate Coverage') {
+      steps {
+        withCredentials([file(credentialsId: 'loc8r-api-test-config', variable: 'TEST_ENV_FILE')]) {
+          dir("${env.APP_DIR}/api") {
+            echo "Preparing test environment..."
+            sh '''
+            if [ -f .env ]; then
+              echo ".env exists, deleting it..."
+              rm .env
+            fi    
+            '''
+            sh '[ ! -f .env ] && cp "$TEST_ENV_FILE" .env || echo ".env already exists, skipping copy"'
+            echo "Running tests..."
+            sh 'npm run test:jenkins'        // genera ./coverage/test-results.xml
+            sh 'npm run coverage'             // ejecuta mocha + nyc para cobertura
+            sh 'npm run coverage:report'      // genera lcov.info y reporte texto en ./coverage
+          }
+        }
+      }
+      post {
+        always {
+          dir("${env.APP_DIR}/api") {
+            // JUnit para Jenkins
+            junit 'coverage/test-results.xml'
             
-    //         // HTML coverage report (nyc o istanbul)
-    //         publishHTML target: [ 
-    //           allowMissing: false,
-    //           alwaysLinkToLastBuild: true,
-    //           keepAll: true,
-    //           reportDir: 'coverage/lcov-report',
-    //           reportFiles: 'index.html',
-    //           reportName: 'Coverage Report'
-    //         ]
-    //       }
-    //     }
-    //   }
-    // }
+            // HTML coverage report (nyc o istanbul)
+            publishHTML target: [ 
+              allowMissing: false,
+              alwaysLinkToLastBuild: true,
+              keepAll: true,
+              reportDir: 'coverage/lcov-report',
+              reportFiles: 'index.html',
+              reportName: 'Coverage Report'
+            ]
+          }
+        }
+      }
+    }
 
-    // stage('SonarQube Analysis') {
-    //   steps {
-    //     // Create scannerwork folder with sufficient permissions
-    //     sh "mkdir ${env.APP_DIR}/.scannerwork"
-    //     sh "chmod -R 777 ${env.APP_DIR}"
+    stage('SonarQube Analysis') {
+      steps {
+        // Create scannerwork folder with sufficient permissions
+        sh "mkdir ${env.APP_DIR}/.scannerwork"
+        sh "chmod -R 777 ${env.APP_DIR}"
 
-    //     dir("${env.APP_DIR}") {
-    //       echo "Running SonarQube analysis..."
+        dir("${env.APP_DIR}") {
+          echo "Running SonarQube analysis..."
 
-    //       withSonarQubeEnv("${env.SONARQUBE_ENV}") {
-    //         sh 'docker run --rm \
-    //             -e SONAR_HOST_URL="$SONAR_HOST_URL" \
-    //             -e SONAR_TOKEN="$SONAR_AUTH_TOKEN" \
-    //             -v "$PWD:/usr/src" \
-    //             sonarsource/sonar-scanner-cli \
-    //             -Dsonar.projectKey=loc8r-api \
-    //             -Dsonar.sources=api/src,build,deploy \
-    //             -Dsonar.javascript.lcov.reportPaths=api/coverage/lcov.info \
-    //             -Dsonar.working.directory=.scannerwork \
-    //             -Dsonar.exclusions=**/coverage/**,**/*.xml,**/*.json \
-    //             -Dsonar.tests=api/test \
-    //             -Dsonar.projectName="Loc8r API" \
-    //             -Dsonar.projectVersion=1.0 \
-    //             -Dsonar.sourceEncoding=UTF-8'
-    //       }
-    //     }
-    //   }
-    // }
+          withSonarQubeEnv("${env.SONARQUBE_ENV}") {
+            sh 'docker run --rm \
+                -e SONAR_HOST_URL="$SONAR_HOST_URL" \
+                -e SONAR_TOKEN="$SONAR_AUTH_TOKEN" \
+                -v "$PWD:/usr/src" \
+                sonarsource/sonar-scanner-cli \
+                -Dsonar.projectKey=loc8r-api \
+                -Dsonar.sources=api/src,build,deploy \
+                -Dsonar.javascript.lcov.reportPaths=api/coverage/lcov.info \
+                -Dsonar.working.directory=.scannerwork \
+                -Dsonar.exclusions=**/coverage/**,**/*.xml,**/*.json \
+                -Dsonar.tests=api/test \
+                -Dsonar.projectName="Loc8r API" \
+                -Dsonar.projectVersion=1.0 \
+                -Dsonar.sourceEncoding=UTF-8'
+          }
+        }
+      }
+    }
 
     // Clear tests and analysis files... remove and clone repo again
     stage('Clean and checkout for Docker build') {
       steps {
         script{
-          git_clone()
+          git_clone(env.APP_DIR)
         }
       }
     }
@@ -192,12 +198,84 @@ pipeline {
       }
     }
 
-    stage('Deploy to Production') {
-      steps{
-        // Check to manual approving deploy to production.
-        // It implemenents Continuous Delivery instead of Continuous Deployment
-        echo 'Successfully deployed!'
-        // input message: "Proceed Deploy to Production?" 
+    stage('Deploy to production') {
+      steps {
+        // credentials for ssh
+        withCredentials([
+          sshUserPrivateKey(credentialsId: env.DEPLOY_CRED_ID, keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER'),
+          file(credentialsId: env.DEPLOY_ENV_CRED_ID, variable: 'ENV_FILE'),
+          string(credentialsId: env.DEPLOY_HOST_CRED_ID, variable: 'DEPLOY_HOST'),
+          string(credentialsId: env.DEPLOY_DIR_CRED_ID, variable: 'DEPLOY_DIR')
+        ]) {
+          // start ssh agent (load private key)
+          sshagent([env.DEPLOY_CRED_ID]) {
+
+            script {
+              echo "Starting deployment process..."
+
+              // Step 1: Clone repo locally
+              git_clone(env.APP_DIR)
+
+              def remoteComposeFile = "${DEPLOY_DIR}/docker-compose.yml"
+              def localComposeFile = "${env.APP_DIR}/deploy/docker-compose-prod.yml"
+
+              // Step 2: Check if docker-compose.yml exists remotely and bring down container if it does
+              sh """
+                echo "Checking if remote docker-compose file exists..."
+                ssh -o StrictHostKeyChecking=no ${SSH_USER}@${DEPLOY_HOST} '
+                  if [ -f "${remoteComposeFile}" ]; then
+                    echo "docker-compose.yml found, bringing down running containers..."
+                    docker compose -f "${remoteComposeFile}" down || true
+                  else
+                    echo "No docker-compose.yml found, skipping docker compose down"
+                  fi
+                '
+              """
+
+              // Step 3.1: Copy new docker-compose-prod.yml to remote as docker-compose.yml
+              sh """
+                echo "Copying new docker-compose file to remote..."
+                scp -o StrictHostKeyChecking=no ${localComposeFile} ${SSH_USER}@${DEPLOY_HOST}:${remoteComposeFile}
+              """
+
+              // Step 3.2: Copy .env file... is stored in the credentials. In deploy node file must be NAMED .env ... also check if it exists before, to delete it... 
+              sh """
+                echo "Ensuring .env file is fresh on remote..."
+                ssh -o StrictHostKeyChecking=no ${SSH_USER}@${DEPLOY_HOST} '
+                  if [ -f "${DEPLOY_DIR}/.env" ]; then
+                    echo ".env exists, deleting it..."
+                    rm -f ${DEPLOY_DIR}/.env
+                  else
+                    echo ".env not present, continuing..."
+                  fi
+                '
+
+                echo "Copying .env file from Jenkins credentials to remote..."
+                scp -o StrictHostKeyChecking=no ${ENV_FILE} ${SSH_USER}@${DEPLOY_HOST}:${DEPLOY_DIR}/.env
+              """
+
+              // Step 4: Pull latest docker image on remote
+              sh """
+                echo "Pulling latest docker images using docker compose pull..."
+                ssh -o StrictHostKeyChecking=no ${SSH_USER}@${DEPLOY_HOST} '
+                  cd ${DEPLOY_DIR}
+                  docker compose pull
+                '
+              """
+
+              // Step 5: Bring up containers with new compose file
+              sh """
+                echo "Starting containers with updated compose file..."
+                ssh -o StrictHostKeyChecking=no ${SSH_USER}@${DEPLOY_HOST} '
+                  cd ${DEPLOY_DIR}
+                  docker compose up -d
+                '
+              """
+
+              echo "Deployment completed!"
+            }
+          }
+        }
       }
     }
   }
