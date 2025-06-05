@@ -49,3 +49,7 @@ require('./reviews/reviews.create.test.js');
 require('./reviews/reviews.get.test.js');
 require('./reviews/reviews.delete.test.js');
 require('./reviews/reviews.update.test.js');
+
+// foursquare endpoints
+require('./locations/locations.foursquare.test.js');
+

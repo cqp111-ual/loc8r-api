@@ -20,10 +20,7 @@ router.get('/locations/image/:imageId', ImageController.getImage);
 
 // foursquare
 router.get('/foursquare/locations', FoursquareController.get);
-router.get('/foursquare/locations/:locationId', FoursquareController.getById);
-
-// Imports a batch of foursquare locations
-router.post('/foursquare/locations/import', FoursquareController.get);
+router.post('/foursquare/locations/import', FoursquareController.import);
 
 // location reviews
 router.post('/locations/:locationId/reviews', ReviewController.create);

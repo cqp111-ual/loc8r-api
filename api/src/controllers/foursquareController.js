@@ -2,6 +2,8 @@ const { request } = require('undici');
 const { foursquareApiUrl, foursquareApiKey } = require('../config/config.js');
 const mongoose = require('mongoose');
 const LocationModel = mongoose.model('Location'); 
+const { isValidCoordinates } = require('../utils/helpers.js');
+const ImageController = require('./imageController.js');
 
 // https://docs.foursquare.com/developer/reference/place-search
 const placeSearchUrl = '/v3/places/search';
@@ -10,12 +12,82 @@ const placeSearchUrl = '/v3/places/search';
 // https://docs.foursquare.com/developer/reference/place-photos
 const placeDetailsUrl = '/v3/places';
 
+const fsq_fields = 'fsq_id,name,geocodes,location,categories,description,rating';
+
+function isValidRadius(r) {
+  const radius = parseInt(r);
+  return !isNaN(radius) && radius >= 0 && radius <= 100000;
+}
+
+function isValidSortBy(value) {
+  return ['relevance', 'rating', 'distance'].includes(value);
+}
+
+// De esta parte NO se van a hacer test, puesto que cada peticion a la API cuesta $$$$$
 class FoursquareController {
+
+  static async getPlaceImage(fsq_id) {
+    try {
+      const photoRes = await request(`${foursquareApiUrl}${placeDetailsUrl}/${fsq_id}/photos?limit=1`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': foursquareApiKey
+        }
+      });
+
+      if (photoRes.statusCode === 200) {
+        const photoBody = await photoRes.body.json();
+        if (Array.isArray(photoBody) && photoBody.length > 0) {
+          const photo = photoBody[0];
+          return `${photo.prefix}original${photo.suffix}`;
+        }
+      }
+    } catch (e) {
+      log.warn(`[FoursquareController.getPlaceImage()] No photo for ${fsq_id}:`, e.message);
+    }
+
+    return null; // en caso de error o sin imagen
+  }
 
   static async get(req, res, next) {
     try {
-      const fields='fsq_id,name,geocodes,location,categories,description,photos'
-      const url = `${foursquareApiUrl}${placeSearchUrl}?fields=${encodeURIComponent(fields)}`;
+      const { q, coordinates, radius, sortBy } = req.query;
+
+      const params = new URLSearchParams();
+
+      // Campos deseados en la respuesta
+      params.append('fields', fsq_fields);
+      params.append('limit', 50);
+
+      if (q && q.trim()) {
+        params.append('query', q.trim());
+      }
+
+      // Procesar coordinates como string JSON (ej: "[37.18141,-1.82252]")
+      if (coordinates) {
+        let parsedCoords;
+        try {
+          parsedCoords = JSON.parse(coordinates);
+          if (isValidCoordinates(parsedCoords)) {
+            params.append('ll', `${parsedCoords[0]},${parsedCoords[1]}`);
+          }
+        } catch (err) {
+          log.warn('[FoursquareController.get()] Invalid coordinates param, skipping.')
+        }
+      }
+
+      if (radius && isValidRadius(radius)) {
+        params.append('radius', radius);
+      } else {
+        params.append('radius', 10000); // default
+      }
+
+      if (sortBy && isValidSortBy(sortBy)) {
+        params.append('sort', sortBy);
+      }
+
+      const url = `${foursquareApiUrl}${placeSearchUrl}?${params.toString()}`;     
       const response = await request(url, {
         method: 'GET',
         headers: {
@@ -25,299 +97,153 @@ class FoursquareController {
       });
       
       if (response.statusCode !== 200) {
-        return res.status(500).json({ success: false, message: `Error fetching ${url}: Expected statusCode=200, received statusCode=${response.statusCode}.`, data: null });
+        return res.status(500).json({ 
+          success: false, 
+          message: `Error fetching FourSquare API.`, 
+          data: null 
+        });
       }
 
       const responseBody = await response.body.json();
 
-      const transformedItems = responseBody.results.map(item => {
-        const location = new LocationModel({
-          _id: item.fsq_id, //map fsq_id to object id
+      const transformedItems = await Promise.all(responseBody.results.map(async item => {
+
+        // Muy caro, mejor no usar
+        // const imageUrl = await FoursquareController.getPlaceImage(item.fsq_id);
+        const imageUrl = null;
+
+        const location = {
+          _id: item.fsq_id,
           name: item.name,
+          rating: (item.rating ?? 0) / 2.0,
           description: item.description || '',
           tags: item.categories.map(category => category.short_name),
           address: item.location.formatted_address,
-          coords: {
-            coordinates: [
-              item.geocodes.main.latitude,
-              item.geocodes.main.longitude
-            ]
-          }
-        });
+          coordinates: [
+            item.geocodes.main.latitude,
+            item.geocodes.main.longitude
+          ],
+          imageUrl
+        };
 
         return location;
-      });
-
-      console.log('Transformed Items:', transformedItems);
+      }));
 
       res.status(200).json({
         success: true,
         message: 'Foursquare places retrieved successfully',
-        data: transformedItems
+        data: {
+          results: transformedItems
+        }
       });
 
     } catch (err) {
-      // Let error handler manage error
       log.error('[FoursquareController.get()] Unexpected error');
-      throw err;
+      res.status(500).json({
+        success: false,
+        message: 'Error fetching FourSquare API.',
+        data: null
+      });
     }
   }
-
-  static async getById(req, res, next) {
+  
+  static async import(req, res, next) {
     try {
-      const locationId = req.params.locationId;
+      const { fsq_ids } = req.body;
 
-      // if (!mongoose.Types.ObjectId.isValid(locationid)) {
-      //   return res.status(400).json({
-      //     success: false,
-      //     message: "Invalid location ID format",
-      //     data: null
-      //   });
-      // }
-
-      const fields='fsq_id,name,geocodes,location,categories,description,photos'
-      const url = `${foursquareApiUrl}${placeDetailsUrl}/${locationId}?fields=${encodeURIComponent(fields)}`;
-      console.log(url);
-      const response = await request(url, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': foursquareApiKey
-        }
-      });
-      
-      if (response.statusCode !== 200) {
-        return res.status(404).json({
-          success: false,
-          message: "Location not found",
+      if (!Array.isArray(fsq_ids) || fsq_ids.length === 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'fsq_ids must be a non-empty array',
           data: null
-        });      
+        });
       }
 
-      const responseBody = await response.body.json();
+      if (fsq_ids.length > 10) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Maximum of 10 fsq_ids allowed per request',
+          data: null
+         });
+      }
 
-      const location = new LocationModel({
-        id: responseBody.fsq_id,
-        name: responseBody.name,
-        description: responseBody.description || '',
-        tags: responseBody.categories.map(category => category.short_name),
-        address: responseBody.location.formatted_address,
-        coords: {
-          coordinates: [
-            responseBody.geocodes.main.latitude,
-            responseBody.geocodes.main.longitude
-          ]
+      const inserted = [];
+      const failed = [];
+
+      for (const fsq_id of fsq_ids) {
+        let imageId = null;
+
+        try {
+          const params = new URLSearchParams();
+          params.append('fields', fsq_fields);
+          const detailsRes = await request(`${foursquareApiUrl}${placeDetailsUrl}/${fsq_id}?${params.toString()}`, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json',
+              'Authorization': foursquareApiKey
+            }
+          });
+
+          if (detailsRes.statusCode !== 200) throw new Error(`Failed to fetch details for ${fsq_id}`);
+          const details = await detailsRes.body.json();
+
+          // 2. Get image URL (si existe)
+          const imageUrl = await FoursquareController.getPlaceImage(fsq_id);
+
+          // 3. Insert image separately (if available)
+          if (imageUrl) {
+            imageId = await ImageController.createImage('url', imageUrl);
+          }
+
+          // 4. Insert location with imageId if exists
+          const location = new LocationModel({
+            name: details.name,
+            description: details.description || '',
+            tags: details.categories.map(c => c.short_name),
+            address: details.location.formatted_address,
+            coords: {
+              type: 'Point',
+              coordinates: [
+                details.geocodes.main.latitude,
+                details.geocodes.main.longitude
+              ]
+            },
+            image: imageId
+          });
+
+          await location.save();
+          inserted.push(fsq_id);
+
+        } catch (err) {
+          log.warn(`[FoursquareController.import()] Failed for ${fsq_id}: ${err.message}`);
+          failed.push(fsq_id);
+
+          // si la imagen se inserto pero location fallo
+          if (imageId) {
+            await ImageController.deleteImage(imageId);
+          }
         }
-      });
+      }
 
-      res.status(200).json({
-        success: true,
-        message: 'Foursquare location retrieved successfully',
-        data: location
+      // HTTP Response (207 multistatus)
+      const statusCode = failed.length === 0 ? 201 : (inserted.length > 0 ? 207 : 500);
+
+      return res.status(statusCode).json({
+        success: failed.length === 0,
+        message: failed.length === 0
+          ? 'All locations imported successfully.'
+          : 'Some locations could not be imported.',
+        data:{
+          inserted,
+          failed
+        }
       });
 
     } catch (err) {
-      // Let error handler manage error
-      log.error('[FoursquareController.getById()] Unexpected error');
-      throw err;
+      log.error('[FoursquareController.import()] Unexpected error:', err);
+      next(err);
     }
   }
 }
 
-
 module.exports = FoursquareController;
-
-
-// const get = async (req, res) => {
-//   try {
-//     const locations = await LocationModel.find({});
-//     if (!locations || locations.length === 0) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Locations not found",
-//         data: null 
-//       });
-//     }
-//     return res.status(200).json({
-//       success: true,
-//       message: "Locations retrieved successfully",
-//       data: locations
-//     });
-//   } catch (err) {
-//       return res.status(500).json({
-//         success: false, 
-//         message: "Error retrieving locations", 
-//         data: err.message 
-//       });
-//   }
-// };
-
-// const locationsReadOne = async (req, res) => {
-//   try {
-//     const locationid = req.params.locationid;
-
-//     if (!mongoose.Types.ObjectId.isValid(locationid)) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Invalid location ID format",
-//         data: null
-//       });
-//     }
-
-//     const location = await LocationModel.findById(locationid);
-//     if (!location) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Location not found",
-//         data: null
-//        });
-//     }
-//     return res.status(200).json({
-//       success: true,
-//       message: "Location found",
-//       data: location
-//     });
-//   } catch (err) {
-//       return res.status(500).json({
-//         success: false, 
-//         message: "Error retrieving location", 
-//         data: err.message 
-//       });
-//   }
-// };
-
-// const locationsCreate = async (req, res) => {
-//   try {
-//     const { name, address, facilities, distance, coords, openingTimes, reviews } = req.body;
-
-//     // Evitamos que se creen locations con reviews desde el inicio
-//     if (reviews) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Reviews cannot be added during location creation",
-//         data: null
-//       });
-//     }
-
-//     const location = new LocationModel({
-//       name,
-//       address,
-//       facilities,
-//       distance,
-//       coords: {
-//         type: 'Point',
-//         coordinates: coords
-//       },
-//       openingTimes
-//     });
-
-//     const savedLocation = await location.save(); // Aquí se dispara la validación automática
-
-//     return res.status(201).json({
-//       success: true,
-//       message: "Location created successfully",
-//       data: savedLocation
-//     });
-
-//   } catch (err) {
-//     // console.error(err);
-
-//     if (err.name === 'ValidationError') {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Validation error",
-//         data: err
-//       });
-//     }
-
-//     // console.error("Error creating location:", err);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Internal server error",
-//       data: err
-//     });
-//   }
-// };
-
-// const locationsDeleteOne = async (req, res) => {
-//   try {
-//     const locationid = req.params.locationid;
-
-//     if (!mongoose.Types.ObjectId.isValid(locationid)) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Invalid location ID format",
-//         data: null
-//       });
-//     }
-
-//     const location = await LocationModel.findByIdAndDelete(locationid);
-//     if (!location) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Location not found",
-//         data: null
-//       });
-//     }
-//     return res.status(204).send();
-//   } catch (err) {
-//     return res.status(500).json({
-//       success: false,
-//       message: "Error deleting location",
-//       data: err.message
-//     });
-//   }
-// };
-
-// const locationsUpdateOne = async (req, res) => {
-//   try {
-//     const locationid = req.params.locationid;
-
-//     if (!mongoose.Types.ObjectId.isValid(locationid)) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Invalid location ID format",
-//         data: null
-//       });
-//     }
-
-//     const location = await LocationModel.findById(locationid);
-//     if (!location) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Location not found",
-//         data: null
-//       });
-//     }
-
-//     // Actualizar los campos de la ubicación
-//     location.name = req.body.name || location.name;
-//     location.address = req.body.address || location.address;
-//     location.facilities = req.body.facilities || location.facilities;
-//     location.coords = req.body.coords || location.coords;
-//     location.openingTimes = req.body.openingTimes || location.openingTimes;
-//     location.reviews = req.body.reviews || location.reviews;
-
-//     const updatedLocation = await location.save();
-
-//     return res.status(200).json({
-//       success: true,
-//       message: "Location updated successfully",
-//       data: updatedLocation
-//     });
-//   } catch (err) {
-//     return res.status(500).json({
-//       success: false,
-//       message: "Error updating location",
-//       data: err.message
-//     });
-//   }
-// };
-
-// module.exports = {
-//   locationsReadAll,
-//   locationsReadOne,
-//   locationsCreate,
-//   locationsDeleteOne,
-//   locationsUpdateOne
-// };
