@@ -42,7 +42,7 @@ describe('GET /api/foursquare/locations', function () {
     checkSuccessResponse(response.body);
     const results = response.body.data.results;
     expect(results).to.be.an('array').with.length.greaterThanOrEqual(1);
-    const found = results.some(item => item._id === fsq_SantiagoBernabeuStadium.fsq_id);
+    const found = results.some(item => item.id === fsq_SantiagoBernabeuStadium.fsq_id);
     expect(found).to.be.true;
   });
 
@@ -59,7 +59,7 @@ describe('GET /api/foursquare/locations', function () {
     checkSuccessResponse(response.body);
     const results = response.body.data.results;
     expect(results).to.be.an('array').with.length.greaterThanOrEqual(1);
-    const found = results.some(item => item._id === fsq_EiffelTower.fsq_id);
+    const found = results.some(item => item.id === fsq_EiffelTower.fsq_id);
     expect(found).to.be.true;
   });
 

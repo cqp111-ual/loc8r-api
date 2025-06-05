@@ -3,9 +3,7 @@ const cookieParser = require("cookie-parser");
 const morgan = require("morgan");
 const multer = require('multer');
 const swaggerUi = require('swagger-ui-express');
-const fs = require('fs');
-const path = require('path');
-const YAML = require('js-yaml');
+const swaggerDocs = require('./docs/api-docs.js');
 
 // Load required configuration
 const { port } = require('./config/config.js');
@@ -20,9 +18,6 @@ require('./models/mongodb/db.js');
 // Load routes
 const indexRouter = require('./routes/index.js');
 const apiRouter = require('./routes/api.js');
-
-// Swagger documentation
-const swaggerDocument = YAML.load(fs.readFileSync(path.join(__dirname, './docs/swagger.yml'), 'utf8'));
 
 // Create app
 const app = express();
@@ -46,7 +41,7 @@ app.use(cookieParser());
 
 app.use('/', indexRouter);
 app.use('/api', apiRouter);
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 
 // error handler
 app.use(function (err, req, res, next) {

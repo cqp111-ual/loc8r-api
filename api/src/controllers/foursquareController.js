@@ -113,7 +113,7 @@ class FoursquareController {
         const imageUrl = null;
 
         const location = {
-          _id: item.fsq_id,
+          id: item.fsq_id,
           name: item.name,
           rating: (item.rating ?? 0) / 2.0,
           description: item.description || '',
