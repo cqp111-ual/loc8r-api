@@ -370,6 +370,135 @@ class LocationController {
     }
   }
 
+  static async update(req, res, next) {
+    let newImageId = null;
+
+    try {
+      if (!req.is('multipart/form-data')) {
+        res.status(400).json({
+          success: false,
+          message: 'Content-Type must be multipart/form-data',
+          data: null
+        });
+        throw new Error('ValidationError');
+      }
+
+      const { locationId } = req.params;
+
+      if (!mongoose.Types.ObjectId.isValid(locationId)) {
+        return res.status(404).json({
+          success: false,
+          message: "Location not found",
+          data: null
+        });
+      }
+
+      const location = await LocationModel.findById(locationId);
+      if (!location) {
+        return res.status(404).json({
+          success: false,
+          message: 'Location not found',
+          data: null
+        });
+      }
+
+      const {
+        name,
+        address,
+        description,
+        tags,
+        coordinates,
+        imageUrl
+      } = req.body;
+
+      // Si hay coordinates, validarlas
+      let parsedCoordinates;
+      if (coordinates) {
+        try {
+          parsedCoordinates = JSON.parse(coordinates);
+          if (!isValidCoordinates(parsedCoordinates)) {
+            throw new Error('Invalid coordinates');
+          }
+        } catch (err) {
+          res.status(400).json({
+            success: false,
+            message: 'Coordinates must be a JSON array [lon, lat] within valid geographic bounds.',
+            data: null
+          });
+          throw new Error('ValidationError');
+        }
+        location.coords = {
+          type: 'Point',
+          coordinates: parsedCoordinates
+        };
+      }
+
+      // Imagen nueva: se elimina la anterior si existía
+      if (req.file) {
+        try {
+          newImageId = await ImageController.createImage('file', req.file);
+          if (location.image) await ImageController.deleteImage(location.image);
+          location.image = newImageId;
+        } catch (err) {
+          res.status(400).json({
+            success: false,
+            message: err.message || 'Error uploading image',
+            data: null
+          });
+          throw new Error('ValidationError');
+        }
+      } else if (imageUrl && typeof imageUrl === 'string' && imageUrl.trim() !== '') {
+        try {
+          newImageId = await ImageController.createImage('url', imageUrl);
+          if (location.image) await ImageController.deleteImage(location.image);
+          location.image = newImageId;
+        } catch (err) {
+          log.warn(`[LocationController.update()] Could not save image from Url ${imageUrl}`);
+        }
+      }
+
+      // Tags
+      if (tags) {
+        try {
+          const parsedTags = JSON.parse(tags);
+          if (Array.isArray(parsedTags) && parsedTags.every(t => typeof t === 'string')) {
+            location.tags = parsedTags;
+          }
+        } catch {
+          location.tags = [];
+        }
+      }
+
+      // Otros campos opcionales
+      if (name) location.name = name;
+      if (address) location.address = address;
+      if (description) location.description = description;
+
+      await location.save();
+
+      return res.status(200).json({
+        success: true,
+        message: 'Location updated successfully',
+        data: location
+      });
+
+    } catch (err) {
+      if (newImageId) {
+        await ImageController.deleteImage(newImageId);
+      } else if (req.file?.path) {
+        try {
+          await fsp.unlink(req.file.path);
+        } catch (unlinkErr) {
+          log.warn(`Could not delete file: ${req.file.path}. Error message: ${unlinkErr.message}`);
+        }
+      }
+
+      if (err.message === 'ValidationError') return res;
+      log.error('[LocationController.update()] Unexpected error!');
+      next(err);
+    }
+  }
+
 }
 
 module.exports = LocationController;

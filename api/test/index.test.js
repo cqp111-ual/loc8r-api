@@ -40,6 +40,7 @@ describe('GET /index', function () {
 require('./locations/locations.create.test.js');
 require('./locations/locations.get.test.js');
 require('./locations/locations.delete.test.js');
+require('./locations/locations.update.test.js');
 
 // image tests (after location tests)
 require('./images/images.get.test.js');

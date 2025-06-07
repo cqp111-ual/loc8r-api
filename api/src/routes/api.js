@@ -275,7 +275,7 @@ router.post('/locations', upload.single('imageFile'), LocationController.create)
  *                       example: null
  * 
  */
-router.put('/locations', upload.single('imageFile'), LocationController.create);
+router.put('/locations/:locationId', upload.single('imageFile'), LocationController.update);
 
 /**
  * @openapi
