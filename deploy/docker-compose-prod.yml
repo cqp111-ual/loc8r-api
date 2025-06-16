@@ -31,8 +31,16 @@ services:
       - "traefik.http.routers.loc8r-api-http.entrypoints=web"
       - "traefik.http.routers.loc8r-api-http.rule=Host(`loc8r-api.cqp111-ual.tech`)"
       - "traefik.http.routers.loc8r-api-http.middlewares=redirect-to-https@file"
+      # Middleware CORS
+      # Provisionalmente permitimos cualquier origen para poder probar durante el desarrollo del front
+      - "traefik.http.middlewares.loc8r-api-cors.headers.accessControlAllowOriginList=*"
+      - "traefik.http.middlewares.loc8r-api-cors.headers.accessControlAllowMethods=GET,OPTIONS,POST,PUT,DELETE"
+      - "traefik.http.middlewares.loc8r-api-cors.headers.accessControlAllowHeaders=*"
+      - "traefik.http.middlewares.loc8r-api-cors.headers.accessControlAllowCredentials=true"
+      - "traefik.http.middlewares.loc8r-api-cors.headers.accessControlMaxAge=100"
       # HTTPS Traffic (port 443)
       - "traefik.http.routers.loc8r-api-https.entrypoints=websecure"
       - "traefik.http.routers.loc8r-api-https.tls=true"
       - "traefik.http.routers.loc8r-api-https.rule=Host(`loc8r-api.cqp111-ual.tech`)"
+      - "traefik.http.routers.loc8r-api-https.middlewares=loc8r-api-cors"
       - "traefik.http.routers.loc8r-api-https.service=loc8r-api"
